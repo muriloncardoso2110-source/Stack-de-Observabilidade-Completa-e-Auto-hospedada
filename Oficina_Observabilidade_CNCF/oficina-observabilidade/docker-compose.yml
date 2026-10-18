@@ -1,0 +1,75 @@
+name: oficina-observabilidade
+services:
+  app:
+    build: ./app
+    environment:
+      OTEL_ENDPOINT: http://otel-collector:4318/v1/traces
+      LOG_FILE: /var/log/oficina/app.jsonl
+      PORT: '8080'
+    ports:
+      - '127.0.0.1:8080:8080'
+    volumes:
+      - app_logs:/var/log/oficina
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.133.0
+    command: ['--config=/etc/otelcol/config.yaml']
+    volumes:
+      - ./config/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+      - app_logs:/var/log/oficina:ro
+    depends_on: [tempo, loki]
+    restart: unless-stopped
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command: ['--config.file=/etc/prometheus/prometheus.yml', '--storage.tsdb.path=/prometheus', '--storage.tsdb.retention.time=7d']
+    ports: ['127.0.0.1:9090:9090']
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./config/alert-rules.yml:/etc/prometheus/alert-rules.yml:ro
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    command: ['--config.file=/etc/alertmanager/alertmanager.yml']
+    ports: ['127.0.0.1:9093:9093']
+    volumes:
+      - ./config/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    restart: unless-stopped
+  loki:
+    image: grafana/loki:3.5.5
+    command: ['-config.file=/etc/loki/config.yaml']
+    volumes:
+      - ./config/loki.yaml:/etc/loki/config.yaml:ro
+      - loki_data:/loki
+    restart: unless-stopped
+  tempo:
+    image: grafana/tempo:2.8.2
+    command: ['-config.file=/etc/tempo/config.yaml']
+    volumes:
+      - ./config/tempo.yaml:/etc/tempo/config.yaml:ro
+      - tempo_data:/var/tempo
+    restart: unless-stopped
+  grafana:
+    image: grafana/grafana:12.1.1
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-troque-esta-senha}
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+    ports: ['127.0.0.1:3000:3000']
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on: [prometheus, loki, tempo]
+    restart: unless-stopped
+volumes:
+  app_logs:
+  prometheus_data:
+  grafana_data:
+  loki_data:
+  tempo_data:

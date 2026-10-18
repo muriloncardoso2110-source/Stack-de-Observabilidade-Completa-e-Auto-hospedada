@@ -1,0 +1,11 @@
+global:
+  resolve_timeout: 5m
+route:
+  receiver: painel-local
+  group_by: [alertname]
+  group_wait: 10s
+  group_interval: 30s
+  repeat_interval: 4h
+receivers:
+  - name: painel-local
+# Alertas ficam visíveis no Alertmanager; nenhuma integração externa é necessária.
